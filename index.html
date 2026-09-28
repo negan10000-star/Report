@@ -21,10 +21,9 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:6px;borde
 </style></head>
 <body>
 <div id="login" class="card" style="max-width:360px;margin:60px auto">
-  <h2>تسجيل الدخول</h2>
-  <label>البريد الإلكتروني</label><input id="email" type="email">
-  <label>كلمة المرور</label><input id="pass" type="password">
-  <p><button class="btn" onclick="signIn()">دخول</button> <button class="btn" onclick="signUp()">حساب جديد</button></p>
+  <h2>الدخول إلى النظام</h2>
+  <label>كلمة المرور (PIN)</label><input id="pin" type="password" inputmode="numeric" autocomplete="off" onkeydown="if(event.key==='Enter')signIn()">
+  <p><button class="btn" onclick="signIn()">دخول</button></p>
   <div id="loginMsg" class="msg"></div>
 </div>
 
@@ -32,7 +31,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:6px;borde
 <header><h1>سجل التقارير اليومية</h1>
   <nav><button id="tForm" class="on" onclick="show('form')">النموذج</button>
   <button id="tMgr" class="hide" onclick="show('mgr')">سجل المدير</button>
-  <button onclick="db.auth.signOut().then(()=>location.reload())">خروج</button></nav></header>
+  <button onclick="location.reload()">خروج</button></nav></header>
 <main>
 <section id="vForm" class="card">
   <div class="row">
@@ -64,29 +63,32 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:6px;borde
 // 1) Paste your project URL + anon (publishable) key from Supabase > Project Settings > API
 const SUPABASE_URL = 'https://ypxxushgiypyacajcoyx.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_M766OcN7pLf1xDYQjNAbiw_3rnSDd4z';
-const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSession:false,autoRefreshToken:false}});
 
-let depts=[], emps=[], projs=[], cats=[], isMgr=false, session=null;
+let depts=[], emps=[], projs=[], cats=[], isMgr=false, PIN='';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const opts=(l,ph)=>`<option value="">${ph}</option>`+l.map(x=>`<option>${esc(x)}</option>`).join('');
 const today=()=>new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Damascus'});
 const flash=(id,t,ok)=>{const e=document.getElementById(id);e.textContent=t;e.className='msg '+(ok?'ok':'err')};
 
-async function signIn(){const {error}=await db.auth.signInWithPassword({email:email.value,password:pass.value});
-  error?flash('loginMsg',error.message,0):init();}
-async function signUp(){const {error}=await db.auth.signUp({email:email.value,password:pass.value});
-  flash('loginMsg',error?error.message:'تم إنشاء الحساب. تحقق من بريدك ثم سجّل الدخول.',!error);}
-
+// Every call sends the PIN; the server checks it. The PIN lives only in memory (re-enter after reload).
+async function rpc(fn,args){
+  const {data,error}=await db.rpc(fn,{p:PIN,...args});
+  if(error) throw new Error(error.message);
+  if(data&&data.error) throw new Error(data.error==='locked'?'محاولات كثيرة خاطئة، حاول بعد 10 دقائق.':data.error==='unauthorized'?'كلمة المرور غير صحيحة.':'غير مسموح أو بيانات غير صالحة ('+data.error+')');
+  return data;
+}
+async function signIn(){
+  PIN=pin.value.trim(); if(!PIN) return;
+  try{ const r=await rpc('check_pin',{}); isMgr=r.role==='manager'; await init(); }
+  catch(e){ PIN=''; flash('loginMsg',e.message,0); }
+}
 async function init(){
-  const {data:{session:s}}=await db.auth.getSession(); if(!s) return; session=s;
-  const {data:prof}=await db.from('profiles').select('role').single(); isMgr=prof?.role==='manager';
+  const o=await rpc('get_options',{});
+  depts=o.departments; emps=o.employees; projs=o.projects; cats=o.categories; startTime.value=o.start_time||'08:00';
   login.classList.add('hide'); app.classList.remove('hide'); if(isMgr) tMgr.classList.remove('hide');
-  const [d,e,p,c,st]=await Promise.all([db.from('departments').select('name'),db.from('employees').select('department,name'),
-    db.from('report_projects').select('name'),db.from('task_categories').select('main,sub'),db.from('app_settings').select('value').eq('key','work_start_time').single()]);
-  depts=d.data.map(x=>x.name); emps=e.data; projs=p.data.map(x=>x.name); cats=c.data; startTime.value=st.data?.value||'08:00';
   rdate.value=today(); dept.innerHTML=opts(depts,'اختر القسم…'); proj.innerHTML=opts(projs,'اختر المشروع…'); onDept(); addTask();
 }
-db.auth.onAuthStateChange((_e,s)=>{if(s&&!session)init()}); init();
 
 function show(v){vForm.classList.toggle('hide',v!=='form');vMgr.classList.toggle('hide',v!=='mgr');
   tForm.classList.toggle('on',v==='form');tMgr.classList.toggle('on',v==='mgr');
@@ -110,18 +112,17 @@ async function submitReport(){
     main_category:t.querySelector('.cat').value,task:t.querySelector('.tk').value,percentage:parseInt(t.querySelector('.pct').value)||-1,note:t.querySelector('.note').value}));
   if(!dept.value||!emp.value||!proj.value||!bld.value.trim()||!rows.length||rows.some(r=>!r.main_category||!r.task||r.percentage<0))
     return flash('fMsg','يرجى تعبئة كل الحقول المطلوبة.',0);
-  const {error}=await db.from('reports').insert(rows);
-  if(error) return flash('fMsg','خطأ: '+error.message,0);
-  flash('fMsg','✓ تم إرسال التقرير بنجاح!',1); tasks.innerHTML=''; addTask();
+  try{ await rpc('submit_reports',{dept:dept.value,emp:emp.value,entries:rows}); }
+  catch(e){ return flash('fMsg','خطأ: '+e.message,0); }
+  flash('fMsg','✓ تم إرسال التقرير بنجاح!',1); tasks.innerHTML=''; addTask(); bld.value='';
 }
 
 // ---- Manager ----
 let attMap={};
 async function loadMgr(){
   const d=mdate.value; if(!d) return;
-  const [r,a]=await Promise.all([db.from('reports').select('*').eq('report_date',d).order('department').order('employee'),
-    db.from('attendance').select('*').eq('att_date',d)]);
-  const rep=r.data||[]; attMap={}; (a.data||[]).forEach(x=>attMap[x.department+'|'+x.employee]=x);
+  let r,a; try{ [r,a]=await Promise.all([rpc('get_reports',{d}),rpc('get_attendance',{d})]); }catch(e){ return flash('aMsg',e.message,0); }
+  const rep=r.reports||[]; attMap={}; (a.records||[]).forEach(x=>attMap[x.department+'|'+x.employee]=x);
   const done=new Set(rep.map(x=>x.department+'|'+x.employee));
   const miss=emps.filter(e=>!done.has(e.department+'|'+e.name));
   missing.innerHTML='<b>لم يرسلوا تقرير:</b> '+(miss.length?miss.map(e=>esc(e.name)+' ('+esc(e.department)+')').join('، '):'الجميع أرسلوا.');
@@ -141,8 +142,8 @@ function rowStatus(tr){if(tr.querySelector('.vac').checked)return{s:'إجازة'
 function calcAtt(){document.querySelectorAll('#attBody tr').forEach(tr=>{const r=rowStatus(tr);tr.querySelector('.st').textContent=r.s+(r.l?` (${r.l} د)`:'')})}
 async function saveAtt(){
   const d=mdate.value, rows=[...document.querySelectorAll('#attBody tr')].map(tr=>{const r=rowStatus(tr);
-    return{att_date:d,department:tr.dataset.d,employee:tr.dataset.n,arrival_time:tr.querySelector('.ar').value||null,status:r.s,late_minutes:r.l,note:tr.querySelector('.nt').value,updated_at:new Date().toISOString()}});
-  const [a,b]=await Promise.all([db.from('attendance').upsert(rows),db.from('app_settings').update({value:startTime.value}).eq('key','work_start_time')]);
-  const err=a.error||b.error; flash('aMsg',err?err.message:'✓ تم حفظ الحضور.',!err);
+    return{department:tr.dataset.d,employee:tr.dataset.n,arrival_time:tr.querySelector('.ar').value||null,status:r.s,late_minutes:r.l,note:tr.querySelector('.nt').value}});
+  try{ await rpc('save_attendance',{d,start_time:startTime.value||'08:00',records:rows}); flash('aMsg','✓ تم حفظ الحضور.',1); }
+  catch(e){ flash('aMsg',e.message,0); }
 }
 </script></body></html>
