@@ -10,7 +10,7 @@ Static single-file front end (`index.html`) + Supabase (Postgres). No accounts: 
 - `reports` is append-only: the app has no edit/delete function. Corrections are new rows with a note.
 
 ## Setup
-1. Supabase SQL editor: run `supabase/schema.sql`, then `supabase/pin_auth.sql`.
+1. Supabase SQL editor: run `supabase/schema.sql`, `supabase/pin_auth.sql`, then `supabase/report_views.sql`.
 2. Set your PINs (SQL editor):
    ```sql
    delete from pin_secrets;
