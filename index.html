@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>سجل التقارير اليومية</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+:root{--g:#3B4636;--gold:#B89B5E;--cream:#EFE8D6;--card:#FBF8EF;--line:#DED2AC;--ink:#2C2A22}
+*{box-sizing:border-box}body{margin:0;background:var(--cream);color:var(--ink);font-family:system-ui,"Segoe UI",sans-serif}
+header{background:var(--g);color:#F2EEDD;padding:16px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+header h1{margin:0;font-size:20px}nav button,.btn{background:var(--g);color:#fff;border:1px solid var(--gold);padding:8px 16px;border-radius:6px;cursor:pointer;font:inherit}
+nav button.on{background:var(--gold);color:var(--g)}
+main{max-width:960px;margin:24px auto;padding:0 16px}.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:20px;margin-bottom:16px}
+input,select,textarea{width:100%;padding:8px;border:1px solid var(--line);border-radius:4px;font:inherit;background:#fff}
+label{display:block;font-size:12px;color:#7A7361;margin:8px 0 4px}.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.task{border-inline-start:3px solid var(--gold);background:#F3EDDD;padding:12px;margin:10px 0;border-radius:4px}
+.emp{background:#fff;border:1px solid var(--line);border-radius:6px;margin-bottom:12px;overflow:hidden}
+.emp h3{margin:0;background:var(--g);color:#fff;padding:8px 12px;font-size:15px}.emp div{padding:6px 12px;border-bottom:1px dotted var(--line);font-size:13px}
+.msg{padding:10px;border-radius:4px;margin-top:10px;display:none}.ok{background:#E4EADB;display:block}.err{background:#F1DFDA;display:block}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:6px;border-bottom:1px solid var(--line);text-align:right}.hide{display:none}
+</style></head>
+<body>
+<div id="login" class="card" style="max-width:360px;margin:60px auto">
+  <h2>تسجيل الدخول</h2>
+  <label>البريد الإلكتروني</label><input id="email" type="email">
+  <label>كلمة المرور</label><input id="pass" type="password">
+  <p><button class="btn" onclick="signIn()">دخول</button> <button class="btn" onclick="signUp()">حساب جديد</button></p>
+  <div id="loginMsg" class="msg"></div>
+</div>
+
+<div id="app" class="hide">
+<header><h1>سجل التقارير اليومية</h1>
+  <nav><button id="tForm" class="on" onclick="show('form')">النموذج</button>
+  <button id="tMgr" class="hide" onclick="show('mgr')">سجل المدير</button>
+  <button onclick="db.auth.signOut().then(()=>location.reload())">خروج</button></nav></header>
+<main>
+<section id="vForm" class="card">
+  <div class="row">
+    <div><label>التاريخ</label><input id="rdate" readonly></div>
+    <div><label>القسم</label><select id="dept" onchange="onDept()"></select></div>
+    <div><label>الاسم</label><select id="emp"></select></div>
+    <div><label>المشروع</label><select id="proj"></select></div>
+    <div><label>المبنى / المنطقة</label><input id="bld" maxlength="200" placeholder="مثال: مبنى 10"></div>
+  </div>
+  <div id="tasks"></div>
+  <p><button class="btn" onclick="addTask()">+ إضافة مهمة</button> <button class="btn" onclick="submitReport()">إرسال التقرير</button></p>
+  <div id="fMsg" class="msg"></div>
+</section>
+
+<section id="vMgr" class="hide">
+  <div class="card"><div class="row">
+    <div><label>التاريخ</label><input type="date" id="mdate" onchange="loadMgr()"></div>
+  </div></div>
+  <div id="missing" class="card"></div>
+  <div id="reports"></div>
+  <div class="card"><h3>الحضور</h3>
+    <label>بداية الدوام</label><input type="time" id="startTime" style="max-width:160px" onchange="calcAtt()">
+    <table><thead><tr><th>الموظف</th><th>وقت الحضور</th><th>إجازة</th><th>غائب</th><th>الحالة</th><th>ملاحظة</th></tr></thead><tbody id="attBody"></tbody></table>
+    <p><button class="btn" onclick="saveAtt()">حفظ الحضور</button></p><div id="aMsg" class="msg"></div></div>
+</section>
+</main></div>
+
+<script>
+// 1) Paste your project URL + anon (publishable) key from Supabase > Project Settings > API
+const SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co';
+const SUPABASE_KEY = 'YOUR-ANON-KEY';
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let depts=[], emps=[], projs=[], cats=[], isMgr=false, session=null;
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const opts=(l,ph)=>`<option value="">${ph}</option>`+l.map(x=>`<option>${esc(x)}</option>`).join('');
+const today=()=>new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Damascus'});
+const flash=(id,t,ok)=>{const e=document.getElementById(id);e.textContent=t;e.className='msg '+(ok?'ok':'err')};
+
+async function signIn(){const {error}=await db.auth.signInWithPassword({email:email.value,password:pass.value});
+  error?flash('loginMsg',error.message,0):init();}
+async function signUp(){const {error}=await db.auth.signUp({email:email.value,password:pass.value});
+  flash('loginMsg',error?error.message:'تم إنشاء الحساب. تحقق من بريدك ثم سجّل الدخول.',!error);}
+
+async function init(){
+  const {data:{session:s}}=await db.auth.getSession(); if(!s) return; session=s;
+  const {data:prof}=await db.from('profiles').select('role').single(); isMgr=prof?.role==='manager';
+  login.classList.add('hide'); app.classList.remove('hide'); if(isMgr) tMgr.classList.remove('hide');
+  const [d,e,p,c,st]=await Promise.all([db.from('departments').select('name'),db.from('employees').select('department,name'),
+    db.from('projects').select('name'),db.from('task_categories').select('main,sub'),db.from('app_settings').select('value').eq('key','work_start_time').single()]);
+  depts=d.data.map(x=>x.name); emps=e.data; projs=p.data.map(x=>x.name); cats=c.data; startTime.value=st.data?.value||'08:00';
+  rdate.value=today(); dept.innerHTML=opts(depts,'اختر القسم…'); proj.innerHTML=opts(projs,'اختر المشروع…'); onDept(); addTask();
+}
+db.auth.onAuthStateChange((_e,s)=>{if(s&&!session)init()}); init();
+
+function show(v){vForm.classList.toggle('hide',v!=='form');vMgr.classList.toggle('hide',v!=='mgr');
+  tForm.classList.toggle('on',v==='form');tMgr.classList.toggle('on',v==='mgr');
+  if(v==='mgr'){mdate.value=mdate.value||today();loadMgr();}}
+
+// ---- Form ----
+const mains=()=>{const allowed=['اجتماع','وضع راهن','تدقيق','عام','تدريب','أخرى',dept.value];
+  return [...new Set(cats.map(c=>c.main))].filter(m=>allowed.includes(m));};
+function onDept(){emp.innerHTML=opts(emps.filter(e=>e.department===dept.value).map(e=>e.name),'اختر اسمك…');
+  document.querySelectorAll('.cat').forEach(c=>{c.innerHTML=opts(mains(),'التصنيف…');});}
+function addTask(){const d=document.createElement('div');d.className='task';
+  d.innerHTML=`<div class="row"><div><label>التصنيف الرئيسي</label><select class="cat">${opts(mains(),'التصنيف…')}</select></div>
+  <div><label>المهمة</label><select class="tk"><option value="">اختر التصنيف أولاً</option></select></div>
+  <div><label>نسبة الإنجاز</label><select class="pct">${opts([100,90,80,70,60,50,40,30,20,10].map(p=>p+'%'),'النسبة…')}</select></div></div>
+  <label>ملاحظات (اختياري)</label><textarea class="note"></textarea>
+  <button class="btn" type="button" onclick="this.parentElement.remove()">حذف</button>`;
+  d.querySelector('.cat').onchange=e=>{d.querySelector('.tk').innerHTML=opts(cats.filter(c=>c.main===e.target.value).map(c=>c.sub),'اختر المهمة…')};
+  tasks.appendChild(d);}
+async function submitReport(){
+  const rows=[...document.querySelectorAll('.task')].map(t=>({department:dept.value,employee:emp.value,project:proj.value,building:bld.value.trim(),
+    main_category:t.querySelector('.cat').value,task:t.querySelector('.tk').value,percentage:parseInt(t.querySelector('.pct').value)||-1,note:t.querySelector('.note').value}));
+  if(!dept.value||!emp.value||!proj.value||!bld.value.trim()||!rows.length||rows.some(r=>!r.main_category||!r.task||r.percentage<0))
+    return flash('fMsg','يرجى تعبئة كل الحقول المطلوبة.',0);
+  const {error}=await db.from('reports').insert(rows);
+  if(error) return flash('fMsg','خطأ: '+error.message,0);
+  flash('fMsg','✓ تم إرسال التقرير بنجاح!',1); tasks.innerHTML=''; addTask();
+}
+
+// ---- Manager ----
+let attMap={};
+async function loadMgr(){
+  const d=mdate.value; if(!d) return;
+  const [r,a]=await Promise.all([db.from('reports').select('*').eq('report_date',d).order('department').order('employee'),
+    db.from('attendance').select('*').eq('att_date',d)]);
+  const rep=r.data||[]; attMap={}; (a.data||[]).forEach(x=>attMap[x.department+'|'+x.employee]=x);
+  const done=new Set(rep.map(x=>x.department+'|'+x.employee));
+  const miss=emps.filter(e=>!done.has(e.department+'|'+e.name));
+  missing.innerHTML='<b>لم يرسلوا تقرير:</b> '+(miss.length?miss.map(e=>esc(e.name)+' ('+esc(e.department)+')').join('، '):'الجميع أرسلوا.');
+  const by={}; rep.forEach(x=>(by[x.department+'|'+x.employee]??=[]).push(x));
+  reports.innerHTML=Object.entries(by).map(([k,l])=>`<div class="emp"><h3>${esc(l[0].employee)} — ${esc(l[0].department)}</h3>`+
+    l.map(x=>`<div><b>${esc(x.project)}</b> / ${esc(x.building)} — ${esc(x.task)} <span>(${x.percentage}%)</span>${x.note?'<br><small>'+esc(x.note)+'</small>':''}</div>`).join('')+'</div>').join('')||'<div class="card">لا توجد تقارير.</div>';
+  attBody.innerHTML=emps.map(e=>{const x=attMap[e.department+'|'+e.name]||{};
+    return `<tr data-d="${esc(e.department)}" data-n="${esc(e.name)}"><td>${esc(e.name)}</td>
+    <td><input type="time" class="ar" value="${x.arrival_time?.slice(0,5)||''}" onchange="calcAtt()"></td>
+    <td><input type="checkbox" class="vac" ${x.status==='إجازة'?'checked':''} onchange="calcAtt()"></td>
+    <td><input type="checkbox" class="abs" ${x.status==='غائب'?'checked':''} onchange="calcAtt()"></td>
+    <td class="st"></td><td><input class="nt" value="${esc(x.note||'')}"></td></tr>`}).join(''); calcAtt();
+}
+const mins=t=>{const[h,m]=t.split(':').map(Number);return h*60+m};
+function rowStatus(tr){if(tr.querySelector('.vac').checked)return{s:'إجازة',l:null};if(tr.querySelector('.abs').checked)return{s:'غائب',l:null};
+  const a=tr.querySelector('.ar').value; if(!a)return{s:'حاضر',l:0}; const l=Math.max(0,mins(a)-mins(startTime.value||'08:00')); return{s:l?'متأخر':'حاضر',l};}
+function calcAtt(){document.querySelectorAll('#attBody tr').forEach(tr=>{const r=rowStatus(tr);tr.querySelector('.st').textContent=r.s+(r.l?` (${r.l} د)`:'')})}
+async function saveAtt(){
+  const d=mdate.value, rows=[...document.querySelectorAll('#attBody tr')].map(tr=>{const r=rowStatus(tr);
+    return{att_date:d,department:tr.dataset.d,employee:tr.dataset.n,arrival_time:tr.querySelector('.ar').value||null,status:r.s,late_minutes:r.l,note:tr.querySelector('.nt').value,updated_at:new Date().toISOString()}});
+  const [a,b]=await Promise.all([db.from('attendance').upsert(rows),db.from('app_settings').update({value:startTime.value}).eq('key','work_start_time')]);
+  const err=a.error||b.error; flash('aMsg',err?err.message:'✓ تم حفظ الحضور.',!err);
+}
+</script></body></html>
