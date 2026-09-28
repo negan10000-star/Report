@@ -62,8 +62,8 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:6px;borde
 
 <script>
 // 1) Paste your project URL + anon (publishable) key from Supabase > Project Settings > API
-const SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co';
-const SUPABASE_KEY = 'YOUR-ANON-KEY';
+const SUPABASE_URL = 'https://ypxxushgiypyacajcoyx.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_M766OcN7pLf1xDYQjNAbiw_3rnSDd4z';
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let depts=[], emps=[], projs=[], cats=[], isMgr=false, session=null;
@@ -82,7 +82,7 @@ async function init(){
   const {data:prof}=await db.from('profiles').select('role').single(); isMgr=prof?.role==='manager';
   login.classList.add('hide'); app.classList.remove('hide'); if(isMgr) tMgr.classList.remove('hide');
   const [d,e,p,c,st]=await Promise.all([db.from('departments').select('name'),db.from('employees').select('department,name'),
-    db.from('projects').select('name'),db.from('task_categories').select('main,sub'),db.from('app_settings').select('value').eq('key','work_start_time').single()]);
+    db.from('report_projects').select('name'),db.from('task_categories').select('main,sub'),db.from('app_settings').select('value').eq('key','work_start_time').single()]);
   depts=d.data.map(x=>x.name); emps=e.data; projs=p.data.map(x=>x.name); cats=c.data; startTime.value=st.data?.value||'08:00';
   rdate.value=today(); dept.innerHTML=opts(depts,'اختر القسم…'); proj.innerHTML=opts(projs,'اختر المشروع…'); onDept(); addTask();
 }

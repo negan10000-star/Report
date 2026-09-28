@@ -8,7 +8,7 @@ create table employees (
   name text not null,
   unique (department, name)
 );
-create table projects (name text primary key);
+create table report_projects (name text primary key);
 create table task_categories (           -- the old "Tasks" sheet
   main text not null,                    -- main category (a department name or اجتماع/عام/...)
   sub  text not null,
@@ -64,7 +64,7 @@ create function is_manager() returns boolean language sql stable security define
 -- Row Level Security
 alter table departments enable row level security;
 alter table employees enable row level security;
-alter table projects enable row level security;
+alter table report_projects enable row level security;
 alter table task_categories enable row level security;
 alter table reports enable row level security;
 alter table attendance enable row level security;
@@ -73,11 +73,11 @@ alter table profiles enable row level security;
 
 create policy "read ref" on departments for select to authenticated using (true);
 create policy "read ref" on employees for select to authenticated using (true);
-create policy "read ref" on projects for select to authenticated using (true);
+create policy "read ref" on report_projects for select to authenticated using (true);
 create policy "read ref" on task_categories for select to authenticated using (true);
 create policy "read settings" on app_settings for select to authenticated using (true);
 create policy "manager edits ref" on employees for all to authenticated using (is_manager()) with check (is_manager());
-create policy "manager edits projects" on projects for all to authenticated using (is_manager()) with check (is_manager());
+create policy "manager edits projects" on report_projects for all to authenticated using (is_manager()) with check (is_manager());
 
 create policy "staff insert reports" on reports for insert to authenticated with check (submitted_by = auth.uid());
 create policy "manager reads reports" on reports for select to authenticated using (is_manager());
@@ -90,7 +90,7 @@ create policy "read own profile" on profiles for select to authenticated using (
 -- Sample data
 insert into departments values ('مدني'),('معماري'),('كهرباء'),('ميكانيك');
 insert into employees(department,name) values ('مدني','موظف 1'),('كهرباء','موظف 2'),('ميكانيك','موظف 3');
-insert into projects values ('مشروع تجريبي أ'),('مشروع تجريبي ب');
+insert into report_projects values ('مشروع تجريبي أ'),('مشروع تجريبي ب');
 insert into task_categories values ('مدني','حفر'),('مدني','صب خرسانة'),('كهرباء','تمديد كابلات'),('ميكانيك','تركيب مضخات'),('اجتماع','اجتماع تنسيق'),('عام','مهمة عامة');
 
 -- To make someone a manager (after they sign up):

@@ -3,7 +3,7 @@
 Static single-file front end (`index.html`) + Supabase (Postgres, Auth, RLS). No server to run.
 
 ## Setup
-1. Create a Supabase project, run `supabase/schema.sql` in the SQL editor.
+1. Create a Supabase project, run `supabase/schema.sql` in the SQL editor (already applied to Project Lab).
 2. Put your project URL and anon key at the top of the `<script>` in `index.html`.
 3. Sign up in the app, then promote yourself:
    `update profiles set role='manager' where user_id=(select id from auth.users where email='you@company.com');`
